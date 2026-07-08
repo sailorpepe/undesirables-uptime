@@ -23,27 +23,17 @@ jobs:
           RESP=$(curl -sS --max-time 25 --retry 2 -w "\n%{http_code}" https://oracle.the-undesirables.com/health)
           CODE=$(printf '%s' "$RESP" | tail -1)
           BODY=$(printf '%s' "$RESP" | sed '$d')
-          [ "$CODE" != "200" ] && FAIL="/health returned HTTP $CODE"
+          [ "$CODE" != "200" ] && FAIL="/health HTTP $CODE"
 
           if [ -z "$FAIL" ]; then
-            MSG=$(BODY="$BODY" python3 <<'PY'
-import os, json, datetime
-try:
-    d = json.loads(os.environ["BODY"])
-except Exception as e:
-    print(f"/health not JSON: {e}"); raise SystemExit
-if d.get("status") != "ok":
-    print(f"status={d.get('status')!r}"); raise SystemExit
-ld = d.get("latest_date")
-try:
-    days = (datetime.date.today() - datetime.date.fromisoformat(ld)).days
-    if days > 2:
-        print(f"pipeline stale: latest_date={ld} ({days}d old)")
-except Exception as e:
-    print(f"bad latest_date {ld!r}: {e}")
-PY
-)
-            [ -n "$MSG" ] && FAIL="$MSG"
+            STATUS=$(printf '%s' "$BODY" | jq -r '.status // "missing"')
+            LD=$(printf '%s' "$BODY" | jq -r '.latest_date // ""')
+            if [ "$STATUS" != "ok" ]; then
+              FAIL="status=$STATUS"
+            elif [ -n "$LD" ]; then
+              AGE=$(( ( $(date -u +%s) - $(date -u -d "$LD" +%s) ) / 86400 ))
+              [ "$AGE" -gt 2 ] && FAIL="pipeline stale: latest_date=$LD (${AGE}d old)"
+            fi
           fi
 
           if [ -z "$FAIL" ]; then
@@ -58,4 +48,4 @@ PY
             echo "::error::$FAIL"
             exit 1
           fi
-          echo "oracle healthy: $BODY"
+          echo "oracle healthy: status=$STATUS latest_date=$LD rail=402"
