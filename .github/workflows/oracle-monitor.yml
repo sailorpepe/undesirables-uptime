@@ -1,65 +1,61 @@
 name: Oracle Uptime Monitor
 
-# Runs on GitHub's always-on infra (NOT the Mini/Studio) so it can catch
-# the oracle being down even when both of David's machines are off/asleep.
 on:
+  workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 min
-  workflow_dispatch: {}        # manual "Run workflow" button for testing
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping oracle · verify status, freshness, and x402 rail
+      - name: Ping oracle - status, freshness, x402 rail
         env:
           NTFY_TOPIC: undsr-oracle-watch-4441
+        shell: bash
         run: |
           set +e
           FAIL=""
 
-          # 1) oracle up + status ok
-          RESP=$(curl -sS --max-time 25 --retry 2 -w $'\n%{http_code}' https://oracle.the-undesirables.com/health)
+          RESP=$(curl -sS --max-time 25 --retry 2 -w "\n%{http_code}" https://oracle.the-undesirables.com/health)
           CODE=$(printf '%s' "$RESP" | tail -1)
           BODY=$(printf '%s' "$RESP" | sed '$d')
-          if [ "$CODE" != "200" ]; then FAIL="/health returned HTTP $CODE"; fi
+          [ "$CODE" != "200" ] && FAIL="/health returned HTTP $CODE"
 
-          # 2) status==ok + pipeline not >2 days stale
           if [ -z "$FAIL" ]; then
-            MSG=$(python3 - "$BODY" <<'PY'
-import sys, json, datetime
+            MSG=$(BODY="$BODY" python3 <<'PY'
+import os, json, datetime
 try:
-    d = json.loads(sys.argv[1])
+    d = json.loads(os.environ["BODY"])
 except Exception as e:
-    print(f"/health body not JSON: {e}"); raise SystemExit
+    print(f"/health not JSON: {e}"); raise SystemExit
 if d.get("status") != "ok":
-    print(f"status = {d.get('status')!r}"); raise SystemExit
+    print(f"status={d.get('status')!r}"); raise SystemExit
 ld = d.get("latest_date")
 try:
     days = (datetime.date.today() - datetime.date.fromisoformat(ld)).days
     if days > 2:
-        print(f"pipeline stale: latest_date={ld} ({days} days old)")
+        print(f"pipeline stale: latest_date={ld} ({days}d old)")
 except Exception as e:
-    print(f"unparseable latest_date {ld!r}: {e}")
+    print(f"bad latest_date {ld!r}: {e}")
 PY
 )
             [ -n "$MSG" ] && FAIL="$MSG"
           fi
 
-          # 3) x402 rail + gating alive (a paid GET must 402, not 200/5xx)
           if [ -z "$FAIL" ]; then
-            RAIL=$(curl -sS --max-time 25 -o /dev/null -w '%{http_code}' "https://oracle.the-undesirables.com/api/v1/market?game=Pokemon")
-            if [ "$RAIL" != "402" ]; then FAIL="x402 rail: /api/v1/market returned $RAIL (expected 402)"; fi
+            RAIL=$(curl -sS --max-time 25 -o /dev/null -w "%{http_code}" "https://oracle.the-undesirables.com/api/v1/market?game=Pokemon")
+            [ "$RAIL" != "402" ] && FAIL="x402 rail: /api/v1/market -> $RAIL (want 402)"
           fi
 
-          # alert + fail (GitHub also emails the owner on a failed run)
           if [ -n "$FAIL" ]; then
-            curl -sS \
-              -H "Title: 🔴 Undesirables Oracle ALERT" \
-              -H "Priority: urgent" -H "Tags: rotating_light" \
-              -d "Oracle health check FAILED — $FAIL"$'\n'"$(date -u '+%Y-%m-%d %H:%M UTC')" \
+            curl -sS -H "Title: Undesirables Oracle ALERT" -H "Priority: urgent" -H "Tags: rotating_light" \
+              -d "Oracle check FAILED: $FAIL ($(date -u '+%F %H:%M UTC'))" \
               "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true
             echo "::error::$FAIL"
             exit 1
           fi
-          echo "✅ oracle healthy — $BODY"
+          echo "oracle healthy: $BODY"
