@@ -1,5 +1,14 @@
 # undesirables-uptime
 
+## 🔌 Connect over MCP — one URL, no install
+
+```
+https://mcp.the-undesirables.com
+```
+
+Paste into any MCP client (Claude, Cursor, ChatGPT) — free card search & forecasts, paid calls via x402.
+
+
 Always-on uptime + freshness monitor for **oracle.the-undesirables.com**, run on
 GitHub Actions (independent of the Mac Mini/Studio, so it still alerts if either
 box is down).
