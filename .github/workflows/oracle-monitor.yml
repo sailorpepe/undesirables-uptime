@@ -32,7 +32,19 @@ jobs:
               FAIL="status=$STATUS"
             elif [ -n "$LD" ]; then
               AGE=$(( ( $(date -u +%s) - $(date -u -d "$LD" +%s) ) / 86400 ))
-              [ "$AGE" -gt 2 ] && FAIL="pipeline stale: latest_date=$LD (${AGE}d old)"
+              # Only alarm if the oracle CLAIMS to be refreshing. When an upstream
+              # feed is down the root publishes panels.usd.refreshing=false, and a
+              # stale date is then the correct, known state rather than an outage.
+              # Without this the monitor fired every 2h for days over the 2026-09
+              # USD freeze -- and an alert that always fires is an alert nobody
+              # reads, which is worse than no alert at all.
+              REFRESHING=$(curl -sS --max-time 25 https://oracle.the-undesirables.com/ \
+                           | jq -r '.panels.usd.refreshing // "unknown"')
+              if [ "$REFRESHING" = "false" ]; then
+                echo "note: USD panel is a KNOWN freeze (latest_date=$LD, ${AGE}d) - not alarming"
+              elif [ "$AGE" -gt 2 ]; then
+                FAIL="pipeline stale: latest_date=$LD (${AGE}d old)"
+              fi
             fi
           fi
 
