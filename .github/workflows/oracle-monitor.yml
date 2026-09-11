@@ -39,7 +39,10 @@ jobs:
               # USD freeze -- and an alert that always fires is an alert nobody
               # reads, which is worse than no alert at all.
               REFRESHING=$(curl -sS --max-time 25 https://oracle.the-undesirables.com/ \
-                           | jq -r '.panels.usd.refreshing // "unknown"')
+                           | jq -r '.panels.usd.refreshing | tostring')
+              # NOTE: do NOT write `// "unknown"` here. jq's // fires on false as
+              # well as null, so it would turn the very value we need (false)
+              # into "unknown" and the guard would never match. tostring is exact.
               if [ "$REFRESHING" = "false" ]; then
                 echo "note: USD panel is a KNOWN freeze (latest_date=$LD, ${AGE}d) - not alarming"
               elif [ "$AGE" -gt 2 ]; then
