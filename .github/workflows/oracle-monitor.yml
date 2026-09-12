@@ -52,8 +52,11 @@ jobs:
           fi
 
           if [ -z "$FAIL" ]; then
-            RAIL=$(curl -sS --max-time 25 -o /dev/null -w "%{http_code}" "https://oracle.the-undesirables.com/api/v1/market?game=Pokemon")
-            [ "$RAIL" != "402" ] && FAIL="x402 rail: /api/v1/market -> $RAIL (want 402)"
+            # 2026-09-12: /api/v1/market is SUSPENDED (200, not charged) while the USD panel
+            # is frozen, so it can no longer prove the rail. Probe a paid route that is
+            # live — graded-slab loan terms — and read the manifest if that ever changes.
+            RAIL=$(curl -sS --max-time 25 -o /dev/null -w "%{http_code}" "https://oracle.the-undesirables.com/api/v1/loan-terms?product_id=1&grade=PSA+10&term_days=30")
+            [ "$RAIL" != "402" ] && FAIL="x402 rail: /api/v1/loan-terms -> $RAIL (want 402)"
           fi
 
           if [ -n "$FAIL" ]; then
