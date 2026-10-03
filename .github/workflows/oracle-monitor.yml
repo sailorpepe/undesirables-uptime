@@ -55,8 +55,23 @@ jobs:
             # 2026-09-12: /api/v1/market is SUSPENDED (200, not charged) while the USD panel
             # is frozen, so it can no longer prove the rail. Probe a paid route that is
             # live — graded-slab loan terms — and read the manifest if that ever changes.
+            # 2026-10-02: pay-per-call is PAUSED (every endpoint free, grading retired).
+            # The root manifest says so in pay_per_call.status, so follow it instead of
+            # hard-coding 402: paused -> loan-terms must be 200 and a retired route 410;
+            # anything else -> loan-terms must be 402. Switching the rail back on needs
+            # no edit here.
+            PPC=$(curl -sS --max-time 25 https://oracle.the-undesirables.com/ \
+                    | jq -r '.pay_per_call.status // "active"')
             RAIL=$(curl -sS --max-time 25 -o /dev/null -w "%{http_code}" "https://oracle.the-undesirables.com/api/v1/loan-terms?product_id=1&grade=PSA+10&term_days=30")
-            [ "$RAIL" != "402" ] && FAIL="x402 rail: /api/v1/loan-terms -> $RAIL (want 402)"
+            if [ -z "$PPC" ]; then
+              FAIL="root manifest unreadable (pay_per_call.status)"
+            elif [ "$PPC" = "paused" ]; then
+              RETIRED=$(curl -sS --max-time 25 -o /dev/null -w "%{http_code}" https://oracle.the-undesirables.com/api/v1/grade)
+              [ "$RAIL" != "200" ] && FAIL="paused rail: /api/v1/loan-terms -> $RAIL (want 200, free)"
+              [ -z "$FAIL" ] && [ "$RETIRED" != "410" ] && FAIL="paused rail: /api/v1/grade -> $RETIRED (want 410, retired)"
+            else
+              [ "$RAIL" != "402" ] && FAIL="x402 rail: /api/v1/loan-terms -> $RAIL (want 402)"
+            fi
           fi
 
           if [ -n "$FAIL" ]; then
@@ -66,4 +81,4 @@ jobs:
             echo "::error::$FAIL"
             exit 1
           fi
-          echo "oracle healthy: status=$STATUS latest_date=$LD rail=402"
+          echo "oracle healthy: status=$STATUS latest_date=$LD pay_per_call=$PPC loan-terms=$RAIL"
